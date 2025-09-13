@@ -1,0 +1,39 @@
+{
+	"name": "XMedia",
+	"version": "2.0.1",
+	"description": "智家代理流媒体",
+	"scripts": {
+		"build:win": "rimraf XMedia.exe *~ && go build -tags \"release\" -ldflags \"-s -w\" -o XMedia.exe main.go ",
+		"build:lin": "go clean -cache && rimraf XMedia *~ && go build -tags \"release\" -ldflags \"-s -w\" -o XMedia main.go ",
+		"build:dev": "rimraf XMedia *~ && go build  -o XMedia main.go "
+	},
+	"keywords": [],
+	"author": "wubihe 1269122125@qq.com",
+	"license": "ISC",
+	"pack": [
+		{
+			"name": "XMedia-windows",
+			"format": "zip",
+			"pattern": "{www/**,redis/**,*.dll,ssl/**,XMedia.exe,config.ini}",
+			"options": {
+                "dot": true,
+                "ignore": [
+                    "*.log"
+                ]
+            }
+		},{
+			"name": "XMedia-linux",
+			"format": "tar",
+			"pattern": "{www/**,redis/**,ssl/**,XMedia,tmp,start.sh,stop.sh,config.ini}",
+			"options": {
+                "dot": true,
+                "ignore": [
+                    "*.log"
+                ]
+            }
+		}
+	],
+	"devDependencies": {
+		"rimraf": "^3.0.2"
+	}
+}

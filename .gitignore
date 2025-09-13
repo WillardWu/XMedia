@@ -1,0 +1,17 @@
+.vscode
+*~
+*.db
+*.dev.db
+*.dev.ini
+*.rdb
+*.log
+*.pid
+/*.zip
+/*.tar.gz
+/logs
+/XMedia.exe
+/XMedia
+/tmp
+node_modules
+tool/*.exe
+*_dev.ini
