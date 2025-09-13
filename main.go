@@ -24,7 +24,11 @@ func (p *program) Start(s service.Service) (err error) {
 	params := map[string]interface{}{
 		"product": productName,
 	}
-	core := core.NewCore(params)
+	core, err := core.NewCore(params)
+	if err != nil || core == nil {
+		fmt.Printf("core.NewCore error:%v", err)
+		return err
+	}
 	p.core = core
 	p.core.Start()
 	return nil

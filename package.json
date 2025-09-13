@@ -14,7 +14,7 @@
 		{
 			"name": "XMedia-windows",
 			"format": "zip",
-			"pattern": "{www/**,redis/**,*.dll,ssl/**,XMedia.exe,config.ini}",
+			"pattern": "{www/**,redis/**,*.dll,ssl/**,XMedia.exe,xmedia.ini}",
 			"options": {
                 "dot": true,
                 "ignore": [
@@ -24,7 +24,7 @@
 		},{
 			"name": "XMedia-linux",
 			"format": "tar",
-			"pattern": "{www/**,redis/**,ssl/**,XMedia,tmp,start.sh,stop.sh,config.ini}",
+			"pattern": "{www/**,redis/**,ssl/**,XMedia,tmp,start.sh,stop.sh,xmedia.ini}",
 			"options": {
                 "dot": true,
                 "ignore": [
