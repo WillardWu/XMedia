@@ -13,6 +13,7 @@ const CONFIG_FILE = "xmedia.ini"
 type GeneralConf struct {
 	ReadTimeoutRaw  string   `ini:"readTimeout"`
 	WriteTimeoutRaw string   `ini:"writeTimeout"`
+	WriteQueueSize  int      `ini:"writeQueueSize"`
 	ReadTimeout     Duration `ini:"-" json:"-"` // filled by Check()
 	WriteTimeout    Duration `ini:"-" json:"-"` // filled by Check()
 }
@@ -25,6 +26,15 @@ type LogConf struct {
 	LogSaveDays  int `ini:"logSaveDays"`
 }
 
+// Rtsp
+type RtspConf struct {
+	Rtsp           bool           `ini:"rtsp"`
+	RtspTransports RtspTransports `ini:"-" json:"-"` // filled by Check()
+	RtspAddress    string         `ini:"rtspAddress"`
+
+	RtspTransportsRaw string `ini:"rtspTransports"`
+}
+
 type Config struct {
 	Ini *ini.File `ini:"-" json:"-"`
 
@@ -33,6 +43,9 @@ type Config struct {
 
 	// Log
 	Log LogConf `ini:"log"`
+
+	// Rtsp
+	Rtsp RtspConf `ini:"rtsp"`
 }
 
 func (c *Config) Check() error {
@@ -46,6 +59,12 @@ func (c *Config) Check() error {
 	if err != nil {
 		return err
 	}
+
+	err = c.Rtsp.RtspTransports.Marshal(c.Rtsp.RtspTransportsRaw)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 

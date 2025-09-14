@@ -3,6 +3,7 @@ package core
 import (
 	"XMedia/internal/conf"
 	"XMedia/internal/logger"
+	"XMedia/internal/servers/rtsp"
 	"context"
 	"fmt"
 	"time"
@@ -15,6 +16,8 @@ type Core struct {
 	confPath  string
 	conf      *conf.Config
 	logger    *logger.AsyncLogQueue
+
+	rtspServer *rtsp.Server
 
 	// out
 	done chan struct{}
@@ -107,6 +110,22 @@ func (p *Core) createResources(initial bool) error {
 		if err != nil {
 			return err
 		}
+	}
+
+	if p.conf.Rtsp.Rtsp {
+		i := &rtsp.Server{
+			Address:        p.conf.Rtsp.RtspAddress,
+			ReadTimeout:    p.conf.General.ReadTimeout,
+			WriteTimeout:   p.conf.General.WriteTimeout,
+			WriteQueueSize: p.conf.General.WriteQueueSize,
+			IsTLS:          false,
+			Parent:         p,
+		}
+		err = i.Initialize()
+		if err != nil {
+			return err
+		}
+		p.rtspServer = i
 	}
 
 	return err

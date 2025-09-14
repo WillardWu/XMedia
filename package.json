@@ -1,7 +1,7 @@
 {
 	"name": "XMedia",
 	"version": "2.0.1",
-	"description": "智家代理流媒体",
+	"description": "流媒体",
 	"scripts": {
 		"build:win": "rimraf XMedia.exe *~ && go build -tags \"release\" -ldflags \"-s -w\" -o XMedia.exe main.go ",
 		"build:lin": "go clean -cache && rimraf XMedia *~ && go build -tags \"release\" -ldflags \"-s -w\" -o XMedia main.go ",
