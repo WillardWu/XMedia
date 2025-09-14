@@ -13,14 +13,16 @@ import (
 )
 
 const (
-	logDefaultMaxSize   = 100 // 日志文件最大尺寸，单位 MB
-	logDefaultMaxBackup = 5   // 最大备份日志文件数
-	logDefaultQueueSize = 1000
+	logDefaultMaxSize   = 100  // 日志文件最大尺寸，单位 MB
+	logDefaultMaxBackup = 5    // 最大备份日志文件数
+	logDefaultQueueSize = 1000 // channel 队列长度
+	logDefaultSaveDays  = 7    // 默认保存天数
 )
 
 type logMessage struct {
-	level   string
-	message string
+	level    string
+	category string
+	message  string
 }
 
 type AsyncLogQueue struct {
@@ -28,14 +30,13 @@ type AsyncLogQueue struct {
 	logMaxSize   int
 	logMaxBackup int
 	logQueueSize int
+	logSaveDays  int
+	exePath      string
 
-	infoLog      *log.Logger
-	errorLog     *log.Logger
-	infoLogName  string
-	errorLogName string
-
+	loggers   map[string]*log.Logger
 	chanQueue chan logMessage
 	wg        sync.WaitGroup
+	mu        sync.RWMutex
 }
 
 type AsyncLogQueueOption func(*AsyncLogQueue)
@@ -58,23 +59,31 @@ func WithLogQueueSize(logQueueSize int) AsyncLogQueueOption {
 	}
 }
 
-func NewAsyncLogQueue(product string, opts ...AsyncLogQueueOption) (q *AsyncLogQueue, err error) {
+func WithLogSaveDays(logSaveDays int) AsyncLogQueueOption {
+	return func(f *AsyncLogQueue) {
+		f.logSaveDays = logSaveDays
+	}
+}
+
+func NewAsyncLogQueue(product string, opts ...AsyncLogQueueOption) (*AsyncLogQueue, error) {
 	logQueue := &AsyncLogQueue{
-		logPrefix:    product + " ",
-		infoLogName:  fmt.Sprintf("%s.log", product),
-		errorLogName: fmt.Sprintf("%s.error.log", product),
+		logPrefix:    product,
 		logMaxSize:   logDefaultMaxSize,
 		logMaxBackup: logDefaultMaxBackup,
 		logQueueSize: logDefaultQueueSize,
+		logSaveDays:  logDefaultSaveDays,
+		loggers:      make(map[string]*log.Logger),
 	}
+
 	for _, opt := range opts {
 		opt(logQueue)
 	}
 
-	err = logQueue.initLog()
+	err := logQueue.initLog()
 	if err != nil {
 		return nil, err
 	}
+
 	return logQueue, nil
 }
 
@@ -87,17 +96,55 @@ func (a *AsyncLogQueue) Add(msg logMessage) {
 	a.chanQueue <- msg
 }
 
+// 注册一个新的日志类别
+func (a *AsyncLogQueue) RegisterCategory(name string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	logpath := filepath.Join(filepath.Dir(a.exePath), "logs", name)
+	utils.EnsureDir(logpath)
+
+	logFilePath := filepath.Join(logpath, fmt.Sprintf("%s.%s.log", a.logPrefix, name))
+	rotateLogger := &lumberjack.Logger{
+		Filename:   logFilePath,
+		MaxSize:    a.logMaxSize,
+		MaxBackups: a.logMaxBackup,
+		MaxAge:     a.logSaveDays,
+		Compress:   false,
+	}
+
+	writer := io.MultiWriter(os.Stdout, rotateLogger)
+	logger := log.New(writer, a.logPrefix+" ", log.Ldate|log.Ltime|log.Lshortfile)
+
+	a.loggers[name] = logger
+	return nil
+}
+
 func (a *AsyncLogQueue) handleLog(msg logMessage) {
-	switch msg.level {
-	case "INFO", "WARN":
-		if a.infoLog != nil {
-			a.infoLog.Output(2, msg.message)
-		}
-	case "ERROR":
-		if a.errorLog != nil {
-			a.errorLog.Output(2, msg.message)
+	a.mu.RLock()
+	logger, ok := a.loggers[msg.category]
+	a.mu.RUnlock()
+
+	if ok && logger != nil {
+		logger.Output(2, fmt.Sprintf("[%s] %s", msg.level, msg.message))
+	} else {
+		// fallback 默认写 info
+		if l, ok := a.loggers["info"]; ok {
+			l.Output(2, fmt.Sprintf("[%s] %s", msg.level, msg.message))
 		}
 	}
+}
+
+func (a *AsyncLogQueue) LogInfoWithCategory(category string, format string, args ...interface{}) {
+	a.Add(logMessage{level: "INFO", category: category, message: fmt.Sprintf(format, args...)})
+}
+
+func (a *AsyncLogQueue) LogWarnWithCategory(category string, format string, args ...interface{}) {
+	a.Add(logMessage{level: "WARN", category: category, message: fmt.Sprintf(format, args...)})
+}
+
+func (a *AsyncLogQueue) LogErrorWithCategory(category string, format string, args ...interface{}) {
+	a.Add(logMessage{level: "ERROR", category: category, message: fmt.Sprintf(format, args...)})
 }
 
 // Log implements log.Writer.
@@ -113,33 +160,34 @@ func (a *AsyncLogQueue) Log(level Level, format string, args ...interface{}) {
 }
 
 func (a *AsyncLogQueue) asyncLogInfo(msg string) {
-	a.Add(logMessage{level: "INFO", message: msg})
+	a.Add(logMessage{level: "INFO", category: "info", message: msg})
 }
 
 func (a *AsyncLogQueue) asyncLogWarn(msg string) {
-	a.Add(logMessage{level: "WARN", message: msg})
+	a.Add(logMessage{level: "WARN", category: "info", message: msg})
 }
 
 func (a *AsyncLogQueue) asyncLogError(msg string) {
-	a.Add(logMessage{level: "ERROR", message: msg})
+	a.Add(logMessage{level: "ERROR", category: "error", message: msg})
 }
 
-func (a *AsyncLogQueue) initLog() (err error) {
-
+func (a *AsyncLogQueue) initLog() error {
 	a.chanQueue = make(chan logMessage, a.logQueueSize)
 
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("AsyncLogQueue.initLog error:%v", err)
 	}
-	err = a.openFile(a.infoLogName, exePath, true)
-	if err != nil {
-		return fmt.Errorf("AsyncLogQueue.initLog error:%v", err)
+	a.exePath = exePath
+
+	// 默认注册 info / error 日志
+	if err := a.RegisterCategory("info"); err != nil {
+		return err
 	}
-	err = a.openFile(a.errorLogName, exePath, false)
-	if err != nil {
-		return fmt.Errorf("AsyncLogQueue.initLog error:%v", err)
+	if err := a.RegisterCategory("error"); err != nil {
+		return err
 	}
+
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
@@ -151,40 +199,9 @@ func (a *AsyncLogQueue) initLog() (err error) {
 	return nil
 }
 
-func (a *AsyncLogQueue) openFile(name, exePath string, info bool) error {
-	logpath := filepath.Join(filepath.Dir(exePath), "logs")
-	utils.EnsureDir(logpath)
-
-	logFilePath := filepath.Join(logpath, name)
-	file, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-	if err != nil {
-		return err
-	}
-	if info {
-		a.infoLog = log.New(&lumberjack.Logger{
-			Filename:   name,
-			MaxSize:    a.logMaxSize,   // megabytes
-			MaxBackups: a.logMaxBackup, // number of files
-		}, a.logPrefix, log.Ldate|log.Ltime|log.Lshortfile)
-
-		a.infoLog.SetOutput(io.MultiWriter(os.Stdout, file))
-		return nil
-	}
-	a.errorLog = log.New(&lumberjack.Logger{
-		Filename:   name,
-		MaxSize:    a.logMaxSize,   // megabytes
-		MaxBackups: a.logMaxBackup, // number of files
-	}, a.logPrefix, log.Ldate|log.Ltime|log.Lshortfile)
-	a.errorLog.SetOutput(io.MultiWriter(os.Stdout, file))
-	return nil
-}
-
-func (a *AsyncLogQueue) Logger(level Level) *log.Logger {
-	switch level {
-	case Info, Warn:
-		return a.infoLog
-	case Error:
-		return a.errorLog
-	}
-	return nil
+// 返回某个分类的 *log.Logger
+func (a *AsyncLogQueue) Logger(category string) *log.Logger {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.loggers[category]
 }

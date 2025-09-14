@@ -80,6 +80,7 @@ func (p *Core) Wait() {
 
 func (p *Core) run() {
 	defer close(p.done)
+	p.logger.RegisterCategory("rtsp")
 outer:
 	for {
 		select {
@@ -87,8 +88,8 @@ outer:
 			break outer
 		default:
 			time.Sleep(1 * time.Second)
-			fmt.Println("hello")
-			// p.Log(logger.Info, "hello")
+			//fmt.Println("hello")
+
 		}
 	}
 	p.ctxCancel()

@@ -22,6 +22,7 @@ type LogConf struct {
 	LogMaxSize   int `ini:"logMaxSize"`
 	LogMaxBackup int `ini:"logMaxBackup"`
 	LogQueueSize int `ini:"logQueueSize"`
+	LogSaveDays  int `ini:"logSaveDays"`
 }
 
 type Config struct {
