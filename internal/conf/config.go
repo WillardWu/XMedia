@@ -29,7 +29,7 @@ type LogConf struct {
 // Rtsp
 type RtspConf struct {
 	Rtsp           bool           `ini:"rtsp"`
-	RtspTransports RtspTransports `ini:"-" json:"-"` // filled by Check()
+	RtspTransports RTSPTransports `ini:"-" json:"-"` // filled by Check()
 	RtspAddress    string         `ini:"rtspAddress"`
 
 	RtspTransportsRaw string `ini:"rtspTransports"`
@@ -60,7 +60,7 @@ func (c *Config) Check() error {
 		return err
 	}
 
-	err = c.Rtsp.RtspTransports.Marshal(c.Rtsp.RtspTransportsRaw)
+	err = c.Rtsp.RtspTransports.UnmarshalEnv("", c.Rtsp.RtspTransportsRaw)
 	if err != nil {
 		return err
 	}
@@ -87,5 +87,6 @@ func Load(file string) (cfg *Config, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("Config.Load %s error:%v", file, err)
 	}
+
 	return cfg, nil
 }

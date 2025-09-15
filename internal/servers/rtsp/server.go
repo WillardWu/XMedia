@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bluenviron/gortsplib/v4/pkg/base"
+
 	"github.com/bluenviron/gortsplib/v4"
 )
 
@@ -22,6 +24,8 @@ type Server struct {
 	WriteTimeout   conf.Duration
 	WriteQueueSize int
 	IsTLS          bool
+	RTSPAddress    string
+	Transports     conf.RTSPTransports
 	Parent         serverParent
 
 	ctx       context.Context
@@ -95,7 +99,6 @@ func (s *Server) Close() {
 
 func (s *Server) run() {
 	defer s.wg.Done()
-
 	serverErr := make(chan error)
 	go func() {
 		serverErr <- s.srv.Wait()
@@ -116,6 +119,90 @@ outer:
 }
 
 // ServerHandlerOnConnOpen can be implemented by a ServerHandler.
-func (s *Server) OnConnOpen(connCtx *gortsplib.ServerHandlerOnConnOpenCtx) {
-	s.Log(logger.Info, "new connection comming...")
+func (s *Server) OnConnOpen(ctx *gortsplib.ServerHandlerOnConnOpenCtx) {
+	c := &conn{
+		isTLS:       s.IsTLS,
+		rtspAddress: s.RTSPAddress,
+		readTimeout: s.ReadTimeout,
+		rconn:       ctx.Conn,
+		rserver:     s.srv,
+		parent:      s,
+	}
+	c.initialize()
+	s.mutex.Lock()
+	s.conns[ctx.Conn] = c
+	s.mutex.Unlock()
+
+	ctx.Conn.SetUserData(c)
+}
+
+// ServerHandlerOnConnClose can be implemented by a ServerHandler.
+func (s *Server) OnConnClose(ctx *gortsplib.ServerHandlerOnConnCloseCtx) {
+	s.mutex.Lock()
+	c := s.conns[ctx.Conn]
+	delete(s.conns, ctx.Conn)
+	s.mutex.Unlock()
+	c.onClose(ctx.Error)
+}
+
+// OnRequest implements gortsplib.ServerHandlerOnRequest.
+func (s *Server) OnRequest(sc *gortsplib.ServerConn, req *base.Request) {
+	c := sc.UserData().(*conn)
+	c.onRequest(req)
+}
+
+// OnResponse implements gortsplib.ServerHandlerOnResponse.
+func (s *Server) OnResponse(sc *gortsplib.ServerConn, res *base.Response) {
+	c := sc.UserData().(*conn)
+	c.OnResponse(res)
+}
+
+// OnSessionOpen implements gortsplib.ServerHandlerOnSessionOpen.
+func (s *Server) OnSessionOpen(ctx *gortsplib.ServerHandlerOnSessionOpenCtx) {
+	se := &session{
+		isTLS:      s.IsTLS,
+		transports: s.Transports,
+		rsession:   ctx.Session,
+		rconn:      ctx.Conn,
+		rserver:    s.srv,
+		parent:     s,
+	}
+	se.initialize()
+	s.mutex.Lock()
+	s.sessions[ctx.Session] = se
+	s.mutex.Unlock()
+	ctx.Session.SetUserData(se)
+}
+
+// OnSessionClose implements gortsplib.ServerHandlerOnSessionClose.
+func (s *Server) OnSessionClose(ctx *gortsplib.ServerHandlerOnSessionCloseCtx) {
+
+	s.mutex.Lock()
+	se := s.sessions[ctx.Session]
+	delete(s.sessions, ctx.Session)
+	s.mutex.Unlock()
+
+	if se != nil {
+		se.onClose(ctx.Error)
+	}
+}
+
+// OnAnnounce implements gortsplib.ServerHandlerOnAnnounce.
+func (s *Server) OnAnnounce(ctx *gortsplib.ServerHandlerOnAnnounceCtx) (*base.Response, error) {
+	c := ctx.Conn.UserData().(*conn)
+	se := ctx.Session.UserData().(*session)
+	return se.onAnnounce(c, ctx)
+}
+
+// OnSetup implements gortsplib.ServerHandlerOnSetup.
+func (s *Server) OnSetup(ctx *gortsplib.ServerHandlerOnSetupCtx) (*base.Response, *gortsplib.ServerStream, error) {
+	c := ctx.Conn.UserData().(*conn)
+	se := ctx.Session.UserData().(*session)
+	return se.onSetup(c, ctx)
+}
+
+// OnRecord implements gortsplib.ServerHandlerOnRecord.
+func (s *Server) OnRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.Response, error) {
+	se := ctx.Session.UserData().(*session)
+	return se.onRecord(ctx)
 }

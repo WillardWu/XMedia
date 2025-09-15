@@ -119,6 +119,8 @@ func (p *Core) createResources(initial bool) error {
 			WriteTimeout:   p.conf.General.WriteTimeout,
 			WriteQueueSize: p.conf.General.WriteQueueSize,
 			IsTLS:          false,
+			RTSPAddress:    p.conf.Rtsp.RtspAddress,
+			Transports:     p.conf.Rtsp.RtspTransports,
 			Parent:         p,
 		}
 		err = i.Initialize()
