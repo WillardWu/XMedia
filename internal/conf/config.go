@@ -11,11 +11,13 @@ const CONFIG_FILE = "xmedia.ini"
 
 // General
 type GeneralConf struct {
-	ReadTimeoutRaw  string   `ini:"readTimeout"`
-	WriteTimeoutRaw string   `ini:"writeTimeout"`
-	WriteQueueSize  int      `ini:"writeQueueSize"`
-	ReadTimeout     Duration `ini:"-" json:"-"` // filled by Check()
-	WriteTimeout    Duration `ini:"-" json:"-"` // filled by Check()
+	ReadTimeoutRaw    string `ini:"readTimeout"`
+	WriteTimeoutRaw   string `ini:"writeTimeout"`
+	WriteQueueSize    int    `ini:"writeQueueSize"`
+	UdpMaxPayloadSize int    `ini:"udpMaxPayloadSize"`
+
+	ReadTimeout  Duration `ini:"-" json:"-"` // filled by Check()
+	WriteTimeout Duration `ini:"-" json:"-"` // filled by Check()
 }
 
 // Log
@@ -46,6 +48,9 @@ type Config struct {
 
 	// Rtsp
 	Rtsp RtspConf `ini:"rtsp"`
+
+	// Path
+	Paths RtspConf `ini:"rtsp"`
 }
 
 func (c *Config) Check() error {

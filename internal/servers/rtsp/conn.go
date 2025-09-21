@@ -3,6 +3,7 @@ package rtsp
 import (
 	"XMedia/internal/conf"
 	"XMedia/internal/logger"
+	"net"
 	"time"
 
 	"github.com/bluenviron/gortsplib/v4"
@@ -39,6 +40,10 @@ func (c *conn) initialize() {
 	c.uuid = uuid.New()
 	c.created = time.Now()
 	c.Log(logger.Info, "opened")
+}
+
+func (c *conn) ip() net.IP {
+	return c.rconn.NetConn().RemoteAddr().(*net.TCPAddr).IP
 }
 
 // onClose is called by rtspServer.

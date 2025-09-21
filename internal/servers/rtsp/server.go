@@ -2,6 +2,7 @@ package rtsp
 
 import (
 	"XMedia/internal/conf"
+	"XMedia/internal/defs"
 	"XMedia/internal/logger"
 	"context"
 	"fmt"
@@ -18,6 +19,10 @@ type serverParent interface {
 	logger.Writer
 }
 
+type serverPathManager interface {
+	AddPublisher(_ defs.PathAddPublisherReq) (defs.Path, error)
+}
+
 type Server struct {
 	Address        string
 	ReadTimeout    conf.Duration
@@ -26,6 +31,7 @@ type Server struct {
 	IsTLS          bool
 	RTSPAddress    string
 	Transports     conf.RTSPTransports
+	PathManager    serverPathManager
 	Parent         serverParent
 
 	ctx       context.Context
@@ -160,12 +166,13 @@ func (s *Server) OnResponse(sc *gortsplib.ServerConn, res *base.Response) {
 // OnSessionOpen implements gortsplib.ServerHandlerOnSessionOpen.
 func (s *Server) OnSessionOpen(ctx *gortsplib.ServerHandlerOnSessionOpenCtx) {
 	se := &session{
-		isTLS:      s.IsTLS,
-		transports: s.Transports,
-		rsession:   ctx.Session,
-		rconn:      ctx.Conn,
-		rserver:    s.srv,
-		parent:     s,
+		isTLS:       s.IsTLS,
+		transports:  s.Transports,
+		rsession:    ctx.Session,
+		rconn:       ctx.Conn,
+		rserver:     s.srv,
+		pathManager: s.PathManager,
+		parent:      s,
 	}
 	se.initialize()
 	s.mutex.Lock()

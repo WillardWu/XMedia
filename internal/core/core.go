@@ -10,14 +10,14 @@ import (
 )
 
 type Core struct {
-	product   string
-	ctx       context.Context
-	ctxCancel func()
-	confPath  string
-	conf      *conf.Config
-	logger    *logger.AsyncLogQueue
-
-	rtspServer *rtsp.Server
+	product     string
+	ctx         context.Context
+	ctxCancel   func()
+	confPath    string
+	conf        *conf.Config
+	logger      *logger.AsyncLogQueue
+	pathManager *pathManager
+	rtspServer  *rtsp.Server
 
 	// out
 	done chan struct{}
@@ -112,6 +112,18 @@ func (p *Core) createResources(initial bool) error {
 		}
 	}
 
+	if p.pathManager == nil {
+		p.pathManager = &pathManager{
+			rtspAddress:       p.conf.Rtsp.RtspAddress,
+			readTimeout:       p.conf.General.ReadTimeout,
+			writeTimeout:      p.conf.General.WriteTimeout,
+			writeQueueSize:    p.conf.General.WriteQueueSize,
+			udpMaxPayloadSize: p.conf.General.UdpMaxPayloadSize,
+			parent:            p,
+		}
+		p.pathManager.initialize()
+	}
+
 	if p.conf.Rtsp.Rtsp {
 		i := &rtsp.Server{
 			Address:        p.conf.Rtsp.RtspAddress,
@@ -121,6 +133,7 @@ func (p *Core) createResources(initial bool) error {
 			IsTLS:          false,
 			RTSPAddress:    p.conf.Rtsp.RtspAddress,
 			Transports:     p.conf.Rtsp.RtspTransports,
+			PathManager:    p.pathManager,
 			Parent:         p,
 		}
 		err = i.Initialize()

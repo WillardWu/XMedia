@@ -1,8 +1,12 @@
 package rtsp
 
 import (
+	"XMedia/internal/auth"
 	"XMedia/internal/conf"
+	"XMedia/internal/defs"
 	"XMedia/internal/logger"
+	"XMedia/internal/protocols/rtsp"
+	"XMedia/internal/stream"
 	"encoding/hex"
 	"fmt"
 	"sync"
@@ -10,10 +14,7 @@ import (
 
 	"github.com/bluenviron/gortsplib/v4"
 	"github.com/bluenviron/gortsplib/v4/pkg/base"
-	"github.com/bluenviron/gortsplib/v4/pkg/description"
-	"github.com/bluenviron/gortsplib/v4/pkg/format"
 	"github.com/google/uuid"
-	"github.com/pion/rtp"
 )
 
 type session struct {
@@ -23,13 +24,13 @@ type session struct {
 	rconn      *gortsplib.ServerConn
 	rserver    *gortsplib.Server
 	//externalCmdPool *externalcmd.Pool
-	//pathManager     serverPathManager
-	parent logger.Writer
+	pathManager serverPathManager
+	parent      logger.Writer
 
 	uuid    uuid.UUID
 	created time.Time
-	//path         defs.Path
-	//stream       *stream.Stream
+	path    defs.Path
+	stream  *stream.Stream
 	//onUnreadHook func()
 	mutex     sync.Mutex
 	state     gortsplib.ServerSessionState
@@ -80,7 +81,31 @@ func (s *session) onAnnounce(c *conn, ctx *gortsplib.ServerHandlerOnAnnounceCtx)
 	}
 	ctx.Path = ctx.Path[1:]
 
-	//s.path = path
+	req := defs.PathAccessRequest{
+		Name:    ctx.Path,
+		Query:   ctx.Query,
+		Publish: true,
+		Proto:   auth.ProtocolRTSP,
+		ID:      &c.uuid,
+		IP:      c.ip(),
+	}
+
+	path, err := s.pathManager.AddPublisher(defs.PathAddPublisherReq{
+		Author:        s,
+		AccessRequest: req,
+	})
+	if err != nil {
+		// var terr auth.Error
+		// if errors.As(err, &terr) {
+		// 	return c.handleAuthError(ctx.Request)
+		// }
+
+		return &base.Response{
+			StatusCode: base.StatusBadRequest,
+		}, err
+	}
+
+	s.path = path
 
 	s.mutex.Lock()
 	s.state = gortsplib.ServerSessionStatePreRecord
@@ -128,19 +153,53 @@ func (s *session) onSetup(c *conn, ctx *gortsplib.ServerHandlerOnSetupCtx) (*bas
 
 // onRecord is called by rtspServer.
 func (s *session) onRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.Response, error) {
+
+	stream, err := s.path.StartPublisher(defs.PathStartPublisherReq{
+		Author:             s,
+		Desc:               s.rsession.AnnouncedDescription(),
+		GenerateRTPPackets: false,
+	})
+	if err != nil {
+		return &base.Response{
+			StatusCode: base.StatusBadRequest,
+		}, err
+	}
+	s.stream = stream
+
+	rtsp.ToStream(
+		s.rsession,
+		s.rsession.AnnouncedDescription().Medias,
+		&conf.Path{},
+		stream,
+		s)
+
 	s.mutex.Lock()
 	s.state = gortsplib.ServerSessionStateRecord
 	s.transport = s.rsession.SetuppedTransport()
 	s.mutex.Unlock()
 
-	ctx.Session.OnPacketRTPAny(func(medi *description.Media, ft format.Format, pkt *rtp.Packet) {
-		// route the RTP packet to all readers
-		fmt.Printf("RTP packet received track: %s,codec: %s, payload: %d, seq: %d, ts: %d, size: %d\n",
-			medi.Type, ft.Codec(), pkt.Header.PayloadType, pkt.Header.SequenceNumber, pkt.Header.Timestamp,
-			len(pkt.Payload))
-	})
-
 	return &base.Response{
 		StatusCode: base.StatusOK,
 	}, nil
 }
+
+// APIReaderDescribe implements reader.
+func (s *session) APIReaderDescribe() defs.APIPathSourceOrReader {
+	return defs.APIPathSourceOrReader{
+		Type: func() string {
+			if s.isTLS {
+				return "rtspsSession"
+			}
+			return "rtspSession"
+		}(),
+		ID: s.uuid.String(),
+	}
+}
+
+// APISourceDescribe implements source.
+func (s *session) APISourceDescribe() defs.APIPathSourceOrReader {
+	return s.APIReaderDescribe()
+}
+
+// Close closes a Session.
+func (s *session) Close() {}
